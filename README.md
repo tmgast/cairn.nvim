@@ -6,22 +6,6 @@
 
 A Neovim plugin and MCP bridge that lets Claude work alongside you in your editor instead of running tasks in the background — guided tours, paired coding, live diff review, and direct access to LSP, treesitter, and git from the conversation.
 
-```
-+-------+------------------------------------------+
-| claude|  lua/cairn/handlers.lua                  |
-|       |  ...                                     |
-| > ok, |  46  function M.open(params)             | <- "1: open handler"
-|   walk|  47    local path = resolve_path(...)    |
-|   me  |  48    if vim.fn.filereadable(path)...   |  [tour mark]
-|   thru|  ...                                     |
-|       |  97  function M.highlight(params)        | <- "2: highlight handler"
-|       |  98    local path = resolve_path(...)    |  [tour mark]
-+-------+------------------------------------------+
-   chat            editor (tmux pane 70%)
-```
-
-<!-- TODO: replace the ASCII sketch with an asciinema recording or GIF showing a tour and a diff_suggest. -->
-
 ## Features
 
 - **Guided tours** — Claude opens files, highlights ranges with labels, annotates lines, and pauses for your acknowledgement at each step. Snapshot/restore round-trips for concept detours.
