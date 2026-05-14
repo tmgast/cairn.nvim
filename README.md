@@ -1,10 +1,42 @@
-# cairn
+# cairn.nvim
 
-A Neovim plugin and MCP bridge that lets Claude drive your editor: guided tours, paired coding, diff review, and direct access to LSP, treesitter, and git from your conversation.
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![Build](https://github.com/tmgast/cairn.nvim/actions/workflows/build.yml/badge.svg)](https://github.com/tmgast/cairn.nvim/actions/workflows/build.yml)
+[![Neovim](https://img.shields.io/badge/Neovim-0.10+-57A143?logo=neovim&logoColor=white)](https://neovim.io)
+
+A Neovim plugin and MCP bridge that lets Claude work alongside you in your editor instead of running tasks in the background — guided tours, paired coding, live diff review, and direct access to LSP, treesitter, and git from the conversation.
+
+```
++-------+------------------------------------------+
+| claude|  lua/cairn/handlers.lua                  |
+|       |  ...                                     |
+| > ok, |  46  function M.open(params)             | <- "1: open handler"
+|   walk|  47    local path = resolve_path(...)    |
+|   me  |  48    if vim.fn.filereadable(path)...   |  [tour mark]
+|   thru|  ...                                     |
+|       |  97  function M.highlight(params)        | <- "2: highlight handler"
+|       |  98    local path = resolve_path(...)    |  [tour mark]
++-------+------------------------------------------+
+   chat            editor (tmux pane 70%)
+```
+
+<!-- TODO: replace the ASCII sketch with an asciinema recording or GIF showing a tour and a diff_suggest. -->
+
+## Features
+
+- **Guided tours** — Claude opens files, highlights ranges with labels, annotates lines, and pauses for your acknowledgement at each step. Snapshot/restore round-trips for concept detours.
+- **Diff review** — `cairn_diff_git` for `:diffthis` against any git ref, `cairn_diff_suggest` for side-by-side comparison of N inline content options with an info-tinted palette distinct from real git diffs.
+- **Native LSP access** — references, definition, hover, workspace symbol search, diagnostics, plus a status tool to check whether a slow server (Kotlin, large TypeScript) is warm before issuing queries.
+- **Treesitter queries** — AST node at position with parent chain, enclosing-node-by-type ("what function am I in?").
+- **Git context** — per-line blame, per-file log, all returned as structured data.
+- **Quickfix integration** — pipe LSP references or any location set into nvim's native quickfix list.
+- **Pair mode** — `BufWritePost` diffs auto-inject into your next Claude message via a `UserPromptSubmit` hook, so saving feels like a chat update.
 
 ## Why
 
-AI coding tends to pull attention out of the editor and into a chat window. Cairn flips that: the editor stays the canvas, and Claude operates on it through structured gestures — open a file, highlight a range, annotate, snapshot a position, diff against git. Tours start to feel like a knowledgeable colleague walking you through code instead of pasting excerpts into chat.
+Agentic AI coding tools are very good at *doing things* on your behalf. They are much less good at keeping you informed about what they are doing, why, and what they noticed along the way. Left to defaults, an agentic workflow drifts into a workhorse pattern: you ask for a thing, the agent disappears for a few minutes, you accept or reject the diff — and never build the same understanding the agent did. The codebase ends up in the agent's context, not yours.
+
+Cairn is a deliberate counter to that. It gives the agent a way to *show you* what it's looking at — open the file, highlight the range, annotate the line, pause for your acknowledgement — and gives you a way back into the loop by selecting code, saving a buffer, or simply being where the work is happening. The result feels more like a pair-coding session than a delegated task. The agent moves at your tempo, you stay in your editor, and the codebase ends the session in your head as well as the agent's.
 
 ## How it works
 
@@ -15,38 +47,40 @@ The Lua plugin opens a Unix socket per project root (`$XDG_RUNTIME_DIR/cairn/<ha
 ### Quick install
 
 ```sh
-git clone <repo> ~/projects/cairn
-cd ~/projects/cairn
+git clone git@github.com:tmgast/cairn.nvim.git ~/projects/cairn.nvim
+cd ~/projects/cairn.nvim
 ./install.sh
 ```
 
-The script builds `cairn-server`, registers it with `claude mcp add`, symlinks the `code-tour` skill into `~/.claude/skills/`, and (if `~/bin` exists on `$PATH`) installs the `pair` helper. It prints the remaining manual steps — adding the LazyVim plugin spec and the optional pair-mode hook — at the end.
+`install.sh` builds `cairn-server`, registers it with `claude mcp add`, symlinks the `code-tour` skill into `~/.claude/skills/`, and (if `~/bin` is on `$PATH`) installs the `pair` helper. It validates that `go`, `git`, `nvim`, and `claude` are on `$PATH` before doing anything, and exits with a clear message if any are missing — it never tries to install them for you. Remaining manual steps (LazyVim spec, optional pair-mode hook) are printed at the end.
 
 ### Manual install
-
-If you prefer to do it piece by piece:
 
 1. **Plugin** — add to your lazy.nvim spec:
 
    ```lua
    return {
-     { dir = "~/projects/cairn", name = "cairn.nvim", lazy = false,
-       config = function() require("cairn").setup() end },
+     {
+       "tmgast/cairn.nvim",
+       lazy = false,
+       build = "cd server && go build -o cairn-server .",
+       config = function() require("cairn").setup() end,
+     },
    }
    ```
 
-2. **MCP server**:
+   For local development, replace the repo string with `dir = "~/projects/cairn.nvim"`.
+
+2. **MCP server registration** — point Claude at the binary:
 
    ```sh
-   cd cairn/server
-   go build -o cairn-server .
-   claude mcp add cairn $(pwd)/cairn-server -s user
+   claude mcp add cairn /path/to/cairn-server -s user
    ```
 
 3. **Code-tour skill** (optional, teaches Claude the tour pattern):
 
    ```sh
-   ln -s ~/projects/cairn/skills/code-tour ~/.claude/skills/code-tour
+   ln -s ~/projects/cairn.nvim/skills/code-tour ~/.claude/skills/code-tour
    ```
 
 4. **Pair-mode hook** (optional) — add to `~/.claude/settings.json`:
@@ -148,17 +182,25 @@ The plugin watches `FileChangedShellPost` to refresh its "last seen" baseline wh
 
 ## Customization
 
+### Config
+
+All options shown with their defaults:
+
 ```lua
 require("cairn").setup({
-  clear_on_escape = true,  -- default true; disable to keep your own <Esc> binding
+  -- Bind <Esc> to clear all cairn marks alongside :nohlsearch. Set false
+  -- to keep whatever your existing <Esc> mapping does.
+  clear_on_escape = true,
 })
 ```
 
-Highlight groups, all overridable in your colorscheme:
+### Highlight groups
 
-- `CairnHighlight` — line-range marks (default: soft tint blended from `Search` bg)
-- `CairnLabel` — labels (default: links to `Comment`)
-- `CairnDiffSuggestAdd` / `Delete` / `Change` / `Text` — suggestion-diff palette (default: tinted from `DiagnosticInfo`)
+All overridable in your colorscheme. Defaults are derived from your existing theme so cairn blends in:
+
+- `CairnHighlight` — line-range marks (default: soft tint blended from `Search` bg with `Normal` bg)
+- `CairnLabel` — labels next to highlights and annotations (default: links to `Comment`)
+- `CairnDiffSuggestAdd` / `CairnDiffSuggestDelete` / `CairnDiffSuggestChange` / `CairnDiffSuggestText` — palette for `cairn_diff_suggest` panels (default: tinted from `DiagnosticInfo`)
 
 ## Requirements
 
@@ -177,5 +219,5 @@ MIT. See [LICENSE](LICENSE).
 `bin/pair [dir]` opens a tmux session named after the project basename with Claude in a 30% left pane and Neovim in the 70% right pane. If the session already exists, it attaches or switches to it. Installed automatically by `install.sh` when `~/bin` is on `$PATH`; otherwise link it manually:
 
 ```sh
-ln -s ~/projects/cairn/bin/pair ~/bin/pair
+ln -s ~/projects/cairn.nvim/bin/pair ~/bin/pair
 ```
