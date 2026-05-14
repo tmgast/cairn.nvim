@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# pair: create or resume a tmux session with claude (30%) and nvim (70%).
+# Usage: pair [directory]
+set -euo pipefail
+
+dir="${1:-$PWD}"
+case "$dir" in
+  -h|--help) echo "Usage: pair [directory]  -- create/resume tmux session with claude (30%) | nvim (70%)"; exit 0 ;;
+esac
+dir="$(cd -- "$dir" && pwd)"
+name="$(basename "$dir" | tr -c '[:alnum:]_-' '-' | sed 's/-*$//')"
+
+if tmux has-session -t "$name" 2>/dev/null; then
+    if [ -n "${TMUX:-}" ]; then
+        exec tmux switch-client -t "$name"
+    fi
+    exec tmux attach -t "$name"
+fi
+
+tmux new-session -d -s "$name" -c "$dir" "nvim"
+tmux split-window -h -b -l 30% -t "${name}:0" -c "$dir" "claude"
+
+if [ -n "${TMUX:-}" ]; then
+    exec tmux switch-client -t "$name"
+fi
+exec tmux attach -t "$name"
