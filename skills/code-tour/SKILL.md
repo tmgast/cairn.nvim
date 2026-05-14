@@ -1,11 +1,11 @@
 ---
 name: code-tour
-description: Guide the user through a code path in their Neovim editor using the cairn plugin. Use when the user asks for a walkthrough, tour, or step-by-step explanation of how a feature is wired together, and the cairn nvim plugin is reachable.
+description: Pair-code with the user through their Neovim editor rather than dumping excerpts into chat. Use when they ask for a walkthrough, tour, or step-by-step explanation of how a feature is wired together, and the cairn plugin is reachable. The editor carries the visual load; you carry the explanation.
 ---
 
 # Code Tour
 
-Step-by-step guided walkthrough of code, driving the user's running Neovim session via the cairn MCP bridge. The editor carries the visual load; chat carries the explanation. Keep chat short per step.
+A cairn tour is a pair-coding session, not a lecture. The editor carries the visual load — open the file, highlight the range, annotate the line — so chat can stay short and focus on the *why*. The user should end the tour with the code in their head, not just yours.
 
 ## Preflight
 
