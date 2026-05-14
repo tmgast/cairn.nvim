@@ -199,6 +199,55 @@ func registerTools(s *server.MCPServer) {
 		),
 		bridge("clipboard"),
 	)
+
+	s.AddTool(
+		mcp.NewTool("cairn_git_blame",
+			mcp.WithDescription("Run `git blame` for a specific line of a file. Returns sha, author, timestamp, and summary of the commit that last touched the line. Useful for legacy-code archaeology."),
+			mcp.WithString("path", mcp.Required(), mcp.Description("File path to blame.")),
+			mcp.WithNumber("line", mcp.Required(), mcp.Description("1-indexed line number.")),
+		),
+		bridge("git_blame"),
+	)
+
+	s.AddTool(
+		mcp.NewTool("cairn_git_log",
+			mcp.WithDescription("Return recent commits, optionally scoped to a single file's history. Each commit has sha, author, timestamp, and subject."),
+			mcp.WithString("path", mcp.Description("Optional file path. If given, scope log to commits touching that file.")),
+			mcp.WithNumber("limit", mcp.Description("Max number of commits. Defaults to 20.")),
+		),
+		bridge("git_log"),
+	)
+
+	s.AddTool(
+		mcp.NewTool("cairn_to_quickfix",
+			mcp.WithDescription("Populate nvim's quickfix list with a set of locations and (by default) open the quickfix window. Pipe LSP references, search results, or any list of file:line locations so the user can navigate with native bindings like ]q/[q."),
+			mcp.WithArray("locations", mcp.Required(), mcp.Description("Array of {file, line, col?, preview?} objects. The 'file' field is required per item.")),
+			mcp.WithString("title", mcp.Description("Title for the quickfix list. Defaults to 'cairn'.")),
+			mcp.WithBoolean("open", mcp.Description("Open the quickfix window after populating. Defaults to true.")),
+		),
+		bridge("to_quickfix"),
+	)
+
+	s.AddTool(
+		mcp.NewTool("cairn_ts_node_at",
+			mcp.WithDescription("Return the treesitter AST node at a file:line:col position, along with its parent chain. Useful when LSP isn't enough or you want syntactic structure (e.g. is this position inside a string literal?). Requires a treesitter parser for the file's language."),
+			mcp.WithString("path", mcp.Required(), mcp.Description("File path.")),
+			mcp.WithNumber("line", mcp.Required(), mcp.Description("1-indexed line.")),
+			mcp.WithNumber("col", mcp.Required(), mcp.Description("1-indexed column.")),
+		),
+		bridge("ts_node_at"),
+	)
+
+	s.AddTool(
+		mcp.NewTool("cairn_ts_enclosing",
+			mcp.WithDescription("Find the nearest enclosing treesitter node at a position whose type matches one of the provided types. Use to ask 'what function/class/method contains this cursor position?'. Node type names are language-specific (e.g. 'function_declaration', 'method_definition', 'class_declaration')."),
+			mcp.WithString("path", mcp.Required(), mcp.Description("File path.")),
+			mcp.WithNumber("line", mcp.Required(), mcp.Description("1-indexed line.")),
+			mcp.WithNumber("col", mcp.Required(), mcp.Description("1-indexed column.")),
+			mcp.WithArray("types", mcp.Required(), mcp.Description("Array of treesitter node type strings to search for, walking up from the cursor.")),
+		),
+		bridge("ts_enclosing"),
+	)
 }
 
 func bridge(method string) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {

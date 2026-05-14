@@ -683,6 +683,180 @@ function M.buffer_content(params)
   }
 end
 
+function M.git_blame(params)
+  local path = resolve_path(params.path)
+  if not params.line then return { ok = false, error = "line is required" } end
+  local line = math.floor(params.line)
+  local root = util.project_root()
+
+  local lines = vim.fn.systemlist({
+    "git", "-C", root, "blame", "-L", line .. "," .. line, "--porcelain", path,
+  })
+  if vim.v.shell_error ~= 0 then
+    return { ok = false, error = "git blame failed: " .. table.concat(lines, " ") }
+  end
+
+  local info = { file = path, line = line }
+  for _, l in ipairs(lines) do
+    local sha = l:match("^([%da-f]+) %d+ %d+")
+    if sha and not info.sha then
+      info.sha = sha
+    end
+    local k, v = l:match("^(%S+) (.+)$")
+    if k and v then
+      if k == "author" then info.author = v
+      elseif k == "author-mail" then info.author_email = v:gsub("[<>]", "")
+      elseif k == "author-time" then info.author_time = tonumber(v)
+      elseif k == "summary" then info.summary = v
+      elseif k == "previous" then info.previous = v end
+    end
+    local content = l:match("^\t(.*)$")
+    if content then info.line_text = content end
+  end
+  return { ok = true, blame = info }
+end
+
+function M.git_log(params)
+  local limit = params.limit and math.floor(params.limit) or 20
+  local root = util.project_root()
+  local cmd = {
+    "git", "-C", root, "log",
+    "-n", tostring(limit),
+    "--format=%H%x09%an%x09%at%x09%s",
+  }
+  if params.path and params.path ~= "" then
+    local p = resolve_path(params.path)
+    table.insert(cmd, "--")
+    table.insert(cmd, p)
+  end
+
+  local lines = vim.fn.systemlist(cmd)
+  if vim.v.shell_error ~= 0 then
+    return { ok = false, error = "git log failed: " .. table.concat(lines, " ") }
+  end
+
+  local commits = {}
+  for _, l in ipairs(lines) do
+    local sha, author, ts, subject = l:match("^([^\t]+)\t([^\t]+)\t([^\t]+)\t(.*)$")
+    if sha then
+      table.insert(commits, {
+        sha = sha,
+        author = author,
+        timestamp = tonumber(ts),
+        subject = subject,
+      })
+    end
+  end
+  return { ok = true, commits = commits, count = #commits }
+end
+
+function M.to_quickfix(params)
+  local locations = params.locations
+  if type(locations) ~= "table" or #locations == 0 then
+    return { ok = false, error = "locations array required and non-empty" }
+  end
+
+  local items = {}
+  for _, loc in ipairs(locations) do
+    local file = loc.file or loc.filename
+    if file then
+      table.insert(items, {
+        filename = file,
+        lnum = loc.line or loc.lnum or 1,
+        col = loc.col or 1,
+        text = loc.preview or loc.text or "",
+      })
+    end
+  end
+
+  vim.fn.setqflist({}, " ", { items = items, title = params.title or "cairn" })
+  if params.open ~= false then
+    pcall(vim.cmd, "copen")
+  end
+  return { ok = true, count = #items, title = params.title or "cairn", opened = params.open ~= false }
+end
+
+local function ts_node_info(node, bufnr, include_text)
+  local sr, sc, er, ec = node:range()
+  local info = {
+    type = node:type(),
+    start_line = sr + 1,
+    start_col = sc + 1,
+    end_line = er + 1,
+    end_col = ec + 1,
+    named = node:named(),
+  }
+  if include_text then
+    local ok, text = pcall(vim.treesitter.get_node_text, node, bufnr)
+    if ok then info.text = text end
+  end
+  return info
+end
+
+function M.ts_node_at(params)
+  local path = resolve_path(params.path)
+  local bufnr = get_or_load_buffer(path)
+  local line = math.floor(params.line or 1) - 1
+  local col = math.floor(params.col or 1) - 1
+
+  local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
+  if not ok or not parser then
+    return { ok = false, error = "no treesitter parser for filetype: " .. vim.bo[bufnr].filetype }
+  end
+  local tree = parser:parse()[1]
+  if not tree then return { ok = false, error = "treesitter parse returned no tree" } end
+  local node = tree:root():descendant_for_range(line, col, line, col)
+  if not node then return { ok = false, error = "no node at position" } end
+
+  local chain = {}
+  local current = node
+  local depth = 0
+  while current and depth < 50 do
+    table.insert(chain, ts_node_info(current, bufnr, depth == 0))
+    current = current:parent()
+    depth = depth + 1
+  end
+
+  return {
+    ok = true,
+    file = path,
+    node = chain[1],
+    parents = vim.list_slice(chain, 2),
+  }
+end
+
+function M.ts_enclosing(params)
+  local path = resolve_path(params.path)
+  local bufnr = get_or_load_buffer(path)
+  local line = math.floor(params.line or 1) - 1
+  local col = math.floor(params.col or 1) - 1
+  local types = params.types
+  if type(types) ~= "table" or #types == 0 then
+    return { ok = false, error = "types array is required (e.g. {'function_declaration', 'method_declaration'})" }
+  end
+
+  local typeset = {}
+  for _, t in ipairs(types) do typeset[t] = true end
+
+  local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
+  if not ok or not parser then
+    return { ok = false, error = "no treesitter parser for filetype: " .. vim.bo[bufnr].filetype }
+  end
+  local tree = parser:parse()[1]
+  if not tree then return { ok = false, error = "treesitter parse returned no tree" } end
+  local node = tree:root():descendant_for_range(line, col, line, col)
+  if not node then return { ok = false, error = "no node at position" } end
+
+  local current = node
+  while current do
+    if typeset[current:type()] then
+      return { ok = true, file = path, found = true, node = ts_node_info(current, bufnr, true) }
+    end
+    current = current:parent()
+  end
+  return { ok = true, file = path, found = false }
+end
+
 function M.clipboard(params)
   local register = params.register
   if not register or register == "" then register = '"' end
