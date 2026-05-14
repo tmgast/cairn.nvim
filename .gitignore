@@ -1,0 +1,4 @@
+/server/cairn-server
+/server/server
+*.swp
+.DS_Store
