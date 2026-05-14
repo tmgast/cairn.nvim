@@ -101,6 +101,76 @@ function M.setup(opts)
     require("cairn").setup(M.config)
     vim.notify("cairn: reloaded all modules")
   end, {})
+
+  vim.api.nvim_create_user_command("CairnInstall", function()
+    local health = require("cairn.health")
+    local lines = {}
+    local push = function(s) table.insert(lines, s) end
+
+    local bin = health.find_binary()
+    if not bin then
+      push("cairn-server binary not found.")
+      push("Build it first: :Lazy build cairn.nvim")
+      vim.notify(table.concat(lines, "\n"), vim.log.levels.ERROR)
+      return
+    end
+    push("cairn-server: " .. bin)
+
+    if vim.fn.executable("claude") == 1 then
+      local registered = health.is_mcp_registered()
+      if registered then
+        push("MCP: already registered")
+      else
+        local out = vim.fn.system({ "claude", "mcp", "add", "cairn", bin, "-s", "user" })
+        if vim.v.shell_error == 0 then
+          push("MCP: registered cairn with claude (user scope)")
+        else
+          push("MCP: registration failed: " .. out)
+        end
+      end
+    else
+      push("MCP: claude CLI not on PATH, skipping registration")
+    end
+
+    local linked, dst = health.is_skill_linked()
+    if linked then
+      push("Skill: already linked at " .. dst)
+    else
+      local skill_src = health.skill_src()
+      vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
+      local ok, err = pcall(vim.uv.fs_symlink, skill_src, dst)
+      if ok then
+        push("Skill: linked " .. dst .. " -> " .. skill_src)
+      else
+        push("Skill: link failed: " .. tostring(err))
+      end
+    end
+
+    local hook_ok = health.is_hook_configured()
+    if hook_ok then
+      push("Hook: pair-mode UserPromptSubmit hook already in ~/.claude/settings.json")
+    else
+      push("")
+      push("Pair-mode hook (optional): add this to ~/.claude/settings.json,")
+      push("merging with any existing 'hooks' block:")
+      push("")
+      push("  {")
+      push("    \"hooks\": {")
+      push("      \"UserPromptSubmit\": [")
+      push("        { \"hooks\": [{ \"type\": \"command\",")
+      push("                      \"command\": \"" .. bin .. " --drain-queue\" }] }")
+      push("      ]")
+      push("    }")
+      push("  }")
+      push("")
+      push("Then :CairnPair on to enable pair mode per nvim session.")
+    end
+
+    push("")
+    push("Run :checkhealth cairn to verify state.")
+
+    vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
+  end, { desc = "Register cairn-server with Claude and symlink the code-tour skill." })
 end
 
 return M
