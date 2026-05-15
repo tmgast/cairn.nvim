@@ -452,26 +452,24 @@ function M.lsp_workspace_symbol(params)
     return { ok = false, error = "query is required" }
   end
 
-  local bufnr = vim.api.nvim_get_current_buf()
-  local clients = vim.lsp.get_clients({ bufnr = bufnr })
-  if #clients == 0 then
-    for _, b in ipairs(vim.api.nvim_list_bufs()) do
-      if vim.api.nvim_buf_is_loaded(b) then
-        local c = vim.lsp.get_clients({ bufnr = b })
-        if #c > 0 then bufnr = b; clients = c; break end
-      end
+  local capable = {}
+  for _, c in ipairs(vim.lsp.get_clients()) do
+    local caps = c.server_capabilities or {}
+    if caps.workspaceSymbolProvider then
+      table.insert(capable, c)
     end
   end
-  if #clients == 0 then
-    return { ok = false, error = "no active LSP client to query" }
+  if #capable == 0 then
+    return { ok = false, error = "no active LSP client advertises workspace/symbol" }
   end
 
-  local results, err = vim.lsp.buf_request_sync(bufnr, "workspace/symbol", { query = query }, params.timeout or 8000)
-  if not results then return { ok = false, error = err or "no LSP response" } end
-
+  local timeout = params.timeout or 8000
   local symbols = {}
-  for _, res in pairs(results) do
-    if res.result then
+  local queried = {}
+  for _, c in ipairs(capable) do
+    table.insert(queried, c.name)
+    local res = c:request_sync("workspace/symbol", { query = query }, timeout)
+    if res and res.result then
       for _, sym in ipairs(res.result) do
         local loc = sym.location
         if loc and loc.uri then
@@ -482,12 +480,13 @@ function M.lsp_workspace_symbol(params)
             file = vim.uri_to_fname(loc.uri),
             line = loc.range.start.line + 1,
             col = loc.range.start.character + 1,
+            client = c.name,
           })
         end
       end
     end
   end
-  return { ok = true, symbols = symbols, count = #symbols }
+  return { ok = true, symbols = symbols, count = #symbols, clients_queried = queried }
 end
 
 function M.diff_suggest(params)

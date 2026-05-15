@@ -12,8 +12,27 @@ function M.find_binary()
   return nil
 end
 
-function M.skill_src()
-  return plugin_root() .. "/skills/code-tour"
+function M.skills_root()
+  return plugin_root() .. "/skills"
+end
+
+function M.list_skills()
+  local root = M.skills_root()
+  local skills = {}
+  local entries = vim.fn.readdir(root)
+  if type(entries) ~= "table" then return skills end
+  for _, name in ipairs(entries) do
+    local src = root .. "/" .. name
+    if vim.fn.isdirectory(src) == 1 and vim.fn.filereadable(src .. "/SKILL.md") == 1 then
+      table.insert(skills, {
+        name = name,
+        src = src,
+        dst = vim.fn.expand("~/.claude/skills/" .. name),
+      })
+    end
+  end
+  table.sort(skills, function(a, b) return a.name < b.name end)
+  return skills
 end
 
 function M.is_mcp_registered()
@@ -26,8 +45,8 @@ function M.is_mcp_registered()
   return false
 end
 
-function M.is_skill_linked()
-  local dst = vim.fn.expand("~/.claude/skills/code-tour")
+function M.is_skill_linked(skill)
+  local dst = skill.dst
   return vim.fn.isdirectory(dst) == 1 or vim.fn.filereadable(dst) == 1, dst
 end
 
@@ -36,6 +55,14 @@ function M.is_hook_configured()
   if vim.fn.filereadable(path) ~= 1 then return false, path end
   local content = table.concat(vim.fn.readfile(path), "\n")
   if content:match("cairn%-server.-%-%-drain%-queue") then return true, path end
+  return false, path
+end
+
+function M.is_claudemd_configured()
+  local path = vim.fn.expand("~/.claude/CLAUDE.md")
+  if vim.fn.filereadable(path) ~= 1 then return false, path end
+  local content = table.concat(vim.fn.readfile(path), "\n")
+  if content:match("cairn_status") then return true, path end
   return false, path
 end
 
@@ -76,12 +103,18 @@ function M.check()
     h.warn("claude CLI not on PATH", { "Install Claude Code, or skip MCP integration" })
   end
 
-  h.start("cairn: code-tour skill")
-  local linked, dst = M.is_skill_linked()
-  if linked then
-    h.ok("Skill linked at " .. dst)
-  else
-    h.warn("Skill not linked at " .. dst, { "Run :CairnInstall" })
+  h.start("cairn: skills")
+  local skills = M.list_skills()
+  if #skills == 0 then
+    h.warn("No skills found under " .. M.skills_root())
+  end
+  for _, sk in ipairs(skills) do
+    local linked, dst = M.is_skill_linked(sk)
+    if linked then
+      h.ok(sk.name .. ": linked at " .. dst)
+    else
+      h.warn(sk.name .. ": not linked at " .. dst, { "Run :CairnInstall" })
+    end
   end
 
   h.start("cairn: pair mode")
@@ -98,6 +131,17 @@ function M.check()
     h.info("UserPromptSubmit hook not configured (optional)", {
       "Required for pair mode to inject save-diffs into your next Claude turn.",
       "Run :CairnInstall to see the snippet.",
+    })
+  end
+
+  h.start("cairn: tool-routing rule")
+  local cmd_ok, cmd_path = M.is_claudemd_configured()
+  if cmd_ok then
+    h.ok("Routing rule present in " .. cmd_path)
+  else
+    h.info("Tool-routing rule not in " .. cmd_path, {
+      "Without it, the agent still defaults to Read+quote instead of cairn_open.",
+      "Run :CairnInstall to see the snippet to paste.",
     })
   end
 end

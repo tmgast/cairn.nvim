@@ -132,17 +132,22 @@ function M.setup(opts)
       push("MCP: claude CLI not on PATH, skipping registration")
     end
 
-    local linked, dst = health.is_skill_linked()
-    if linked then
-      push("Skill: already linked at " .. dst)
-    else
-      local skill_src = health.skill_src()
-      vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
-      local ok, err = pcall(vim.uv.fs_symlink, skill_src, dst)
-      if ok then
-        push("Skill: linked " .. dst .. " -> " .. skill_src)
+    local skills = health.list_skills()
+    if #skills == 0 then
+      push("Skills: none found under " .. health.skills_root())
+    end
+    for _, sk in ipairs(skills) do
+      local linked, dst = health.is_skill_linked(sk)
+      if linked then
+        push("Skill " .. sk.name .. ": already linked at " .. dst)
       else
-        push("Skill: link failed: " .. tostring(err))
+        vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
+        local ok, err = pcall(vim.uv.fs_symlink, sk.src, dst)
+        if ok then
+          push("Skill " .. sk.name .. ": linked " .. dst .. " -> " .. sk.src)
+        else
+          push("Skill " .. sk.name .. ": link failed: " .. tostring(err))
+        end
       end
     end
 
@@ -166,11 +171,42 @@ function M.setup(opts)
       push("Then :CairnPair on to enable pair mode per nvim session.")
     end
 
+    local cmd_ok = health.is_claudemd_configured()
+    if cmd_ok then
+      push("CLAUDE.md: tool-routing rule already present in ~/.claude/CLAUDE.md")
+    else
+      push("")
+      push("Tool-routing rule (recommended): add this to ~/.claude/CLAUDE.md,")
+      push("replacing or merging any existing tool-routing block:")
+      push("")
+      push("  ## Tool Routing")
+      push("")
+      push("  Route code work through tiers:")
+      push("")
+      push("  1. cairn (if `cairn_status` is connected) - primary layer when nvim is")
+      push("     running with the cairn plugin. Probe `cairn_status` once at the start")
+      push("     of code work in a session.")
+      push("     - View code: `cairn_open`; do not quote excerpts into chat. Editor")
+      push("       carries the visual; chat narrates.")
+      push("     - Semantic queries: `cairn_lsp_references`, `cairn_lsp_definition`,")
+      push("       `cairn_lsp_hover`, `cairn_lsp_workspace_symbol`.")
+      push("     - Syntactic queries: `cairn_ts_node_at`, `cairn_ts_enclosing`.")
+      push("     - Diagnostics: `cairn_diagnostics` instead of re-running compilation.")
+      push("  2. tree-sitter-mcp - for AST-pattern searches and structural analysis")
+      push("     (`search_code`, `analyze_code`), and as semantic fallback when cairn is")
+      push("     unreachable (`find_usage`, `check_errors`).")
+      push("  3. Basic tools (Glob, Grep, Read) - file discovery, plain content reading,")
+      push("     last-resort fallback.")
+      push("")
+      push("  The `code-tour` and `code-discovery` skills are best-practice frames for")
+      push("  cairn-mediated work; cairn primitives can also be used ad hoc outside them.")
+    end
+
     push("")
     push("Run :checkhealth cairn to verify state.")
 
     vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
-  end, { desc = "Register cairn-server with Claude and symlink the code-tour skill." })
+  end, { desc = "Register cairn-server with Claude, symlink cairn skills, and print optional snippets." })
 end
 
 return M

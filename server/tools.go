@@ -160,8 +160,8 @@ func registerTools(s *server.MCPServer) {
 
 	s.AddTool(
 		mcp.NewTool("cairn_lsp_workspace_symbol",
-			mcp.WithDescription("Search symbols across the workspace by name using the language server. Useful when the user names a function/type without pointing at it. Returns symbols with kind, container, and location."),
-			mcp.WithString("query", mcp.Required(), mcp.Description("Symbol name to search for. The LSP determines matching strategy (typically fuzzy/substring).")),
+			mcp.WithDescription("Search symbols across the workspace by name. Dispatches to every attached LSP client whose server advertises workspaceSymbolProvider, regardless of which buffer is currently focused; each returned symbol carries a 'client' field identifying its source. The response also includes 'clients_queried' so an empty 'symbols' array unambiguously means 'these servers responded with no matches' rather than 'no server was asked'. NOTE: matching strategy is server-defined and not always fuzzy. kotlin_lsp in particular only returns short name-prefix matches (roughly 1-4 chars); a long query like 'SaveSyncOrchestrator' will return [] even when the symbol exists. If a long Kotlin query returns empty but cairn_lsp_status shows kotlin_lsp healthy, retry with a 2-4 char prefix, or fall back to grep to locate a file and then use cairn_lsp_hover / cairn_lsp_definition on the name."),
+			mcp.WithString("query", mcp.Required(), mcp.Description("Symbol name or name prefix to search for. Matching is server-defined; see tool description for kotlin_lsp's prefix-only quirk.")),
 		),
 		bridge("lsp_workspace_symbol"),
 	)

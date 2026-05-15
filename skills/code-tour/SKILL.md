@@ -1,11 +1,13 @@
 ---
 name: code-tour
-description: Pair-code with the user through their Neovim editor rather than dumping excerpts into chat. Use when they ask for a walkthrough, tour, or step-by-step explanation of how a feature is wired together, and the cairn plugin is reachable. The editor carries the visual load; you carry the explanation.
+description: Map a known end-to-end code flow with the user through their Neovim editor. Use when they explicitly ask to be walked through, toured through, or shown step-by-step how a feature is wired together along a route you already know — not for open-ended "show me X" or investigative questions (use code-discovery for those). The cairn plugin must be reachable. The editor carries the visual load; you carry the explanation.
 ---
 
 # Code Tour
 
-A cairn tour is a pair-coding session, not a lecture. The editor carries the visual load — open the file, highlight the range, annotate the line — so chat can stay short and focus on the *why*. The user should end the tour with the code in their head, not just yours.
+A cairn tour is a pair-coding session along a known route, not a lecture and not an investigation. You already know roughly where the flow goes; the tour traces it with the user. The editor carries the visual load — open the file, highlight the range, annotate the line — so chat can stay short and focus on the *why*. The user should end the tour with the code in their head, not just yours.
+
+If you reach a point where the route forks and you don't actually know which branch to take, or the user asks a question that opens an unknown, that's a discovery moment — pivot to `code-discovery` (or run a concept detour, below, if it's a quick zoom-in and you can return to the route). Tours and discovery are frames, not exclusive modes; they're allowed to interleave.
 
 ## Preflight
 
